@@ -3,14 +3,51 @@ import json
 import requests
 from bs4 import BeautifulSoup
 
-# Данные берем из переменных окружения (GitHub Secrets)
 BOT_TOKEN = os.getenv("BOT_TOKEN")
 TARGET_CHAT_ID = os.getenv("TARGET_CHAT_ID")
+AI_API_KEY = os.getenv("AI_API_KEY")
 
-# Список юзернеймов каналов без символа @ (только публичные!)
-CHANNELS = ["durov", "tginfo"] 
+# Укажите юзернеймы каналов-источников для парсинга (без символа @)
+CHANNELS = ["durov", "tginfo", "news"] 
 
 STATE_FILE = "last_posts.json"
+
+def process_with_ai(text):
+    """Обработка текста поста через OpenRouter API."""
+    if not AI_API_KEY:
+        print("AI_API_KEY не задан, отправляем оригинальный текст.")
+        return text
+
+    url = "https://openrouter.ai/api/v1/chat/completions"
+    headers = {
+        "Authorization": f"Bearer {AI_API_KEY}",
+        "Content-Type": "application/json"
+    }
+    
+    prompt = (
+        "Ты — профессиональный редактор новостного Telegram-канала. "
+        "Сделай краткую выжимку (рерайт) следующего поста на русском языке. "
+        "Сохрани только ключевой смысл, сделай текст емким и структурированным, добавь 1-2 уместных эмодзи. "
+        "Не добавляй вводных слов вроде 'Вот выжимка:' или 'Рерайт:'."
+    )
+
+    payload = {
+        "model": "google/gemini-2.0-flash-001",
+        "messages": [
+            {"role": "system", "content": prompt},
+            {"role": "user", "content": text}
+        ]
+    }
+
+    try:
+        response = requests.post(url, json=payload, headers=headers, timeout=25)
+        response.raise_for_status()
+        data = response.json()
+        ai_text = data["choices"][0]["message"]["content"].strip()
+        return ai_text
+    except Exception as e:
+        print(f"Ошибка при запросе к ИИ: {e}. Отправляем оригинал.")
+        return text
 
 def load_last_posts():
     if os.path.exists(STATE_FILE):
@@ -60,7 +97,6 @@ def parse_channel(channel_name, last_id):
         if not messages:
             return last_id
 
-        # При первом запуске (last_id == 0) запоминаем свежий пост и не спамим старыми
         if last_id == 0:
             last_msg_data = messages[-1].get("data-post")
             if last_msg_data and "/" in last_msg_data:
@@ -76,7 +112,6 @@ def parse_channel(channel_name, last_id):
                 continue
             
             post_id = int(post_data.split("/")[1])
-            
             if post_id <= last_id:
                 continue
             
@@ -84,10 +119,12 @@ def parse_channel(channel_name, last_id):
             if not text_div:
                 continue
             
-            text = text_div.get_text(separator="\n", strip=True)
-            caption = f"<b>Новый пост из @{channel_name}:</b>\n\n{text}"
+            raw_text = text_div.get_text(separator="\n", strip=True)
             
-            print(f"Найден новый пост #{post_id} в @{channel_name}")
+            print(f"Обработка нового поста #{post_id} из @{channel_name} через ИИ...")
+            ai_processed_text = process_with_ai(raw_text)
+            
+            caption = f"<b>Пост из @{channel_name}:</b>\n\n{ai_processed_text}"
             send_telegram_message(caption)
             
             if post_id > new_last_id:
