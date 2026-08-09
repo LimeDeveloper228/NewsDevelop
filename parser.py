@@ -7,8 +7,8 @@ BOT_TOKEN = os.getenv("BOT_TOKEN")
 TARGET_CHAT_ID = os.getenv("TARGET_CHAT_ID")
 AI_API_KEY = os.getenv("AI_API_KEY")
 
-# Укажите юзернеймы каналов-источников для парсинга (без символа @)
-CHANNELS = ["durov", "tginfo", "news"] 
+# Каналы-источники, откуда парсим новости (без знака @)
+CHANNELS = ["LimeDeveloper"] 
 
 STATE_FILE = "last_posts.json"
 
@@ -43,8 +43,7 @@ def process_with_ai(text):
         response = requests.post(url, json=payload, headers=headers, timeout=25)
         response.raise_for_status()
         data = response.json()
-        ai_text = data["choices"][0]["message"]["content"].strip()
-        return ai_text
+        return data["choices"][0]["message"]["content"].strip()
     except Exception as e:
         print(f"Ошибка при запросе к ИИ: {e}. Отправляем оригинал.")
         return text
